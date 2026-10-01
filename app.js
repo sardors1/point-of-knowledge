@@ -37,6 +37,24 @@ function setLang(l){lang=l;store.set("lang",l);render()}
 function setTheme(){const d=!document.body.classList.contains("dark");document.body.classList.toggle("dark",d);store.set("theme",d?"dark":"light")}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
+function resetView(token){
+APP.innerHTML=`<div class="auth"><section class="auth-brand"><div class="brand-inner"><img src="assets/logo.png"><h1>Point of Knowledge</h1><p>Нуқтаи Дониш</p><div class="tag">${tr("learn")}</div></div></section>
+<section class="auth-form"><div class="auth-top"><div class="langs">${["ru","tj","uz","en"].map(l=>`<button class="${lang===l?"active":""}" data-lang="${l}">${l.toUpperCase()}</button>`).join("")}</div><button class="theme" id="theme">☼</button></div>
+<div class="auth-card"><button class="link" id="back">← ${tr("signIn")}</button><h2 style="margin-top:18px">Новый пароль</h2><p class="sub">Введите новый пароль минимум из 8 символов.</p>
+<form id="resetForm"><div class="field"><label>Новый пароль</label><div class="input"><input id="newPass" type="password" minlength="8" required placeholder="Минимум 8 символов"></div></div><div class="field"><label>Повторите пароль</label><div class="input"><input id="newPass2" type="password" minlength="8" required placeholder="Повторите пароль"></div></div><button class="primary">Изменить пароль</button></form></div></section></div>`;
+$$('.langs button').forEach(b=>b.onclick=()=>setLang(b.dataset.lang));$('#theme').onclick=setTheme;$('#back').onclick=loginView;
+$('#resetForm').onsubmit=e=>{e.preventDefault();if($('#newPass').value!==$('#newPass2').value)return toast('Пароли не совпадают');api('/api/reset-password',{method:'POST',body:JSON.stringify({token:token,password:$('#newPass').value})}).then(d=>{toast(d.message||'Пароль изменён');setTimeout(loginView,800)}).catch(err=>toast(err.message))};
+}
+
+function forgotView(){
+APP.innerHTML=`<div class="auth"><section class="auth-brand"><div class="brand-inner"><img src="assets/logo.png"><h1>Point of Knowledge</h1><p>Нуқтаи Дониш</p><div class="tag">${tr("learn")}</div></div></section>
+<section class="auth-form"><div class="auth-top"><div class="langs">${["ru","tj","uz","en"].map(l=>`<button class="${lang===l?"active":""}" data-lang="${l}">${l.toUpperCase()}</button>`).join("")}</div><button class="theme" id="theme">☼</button></div>
+<div class="auth-card"><button class="link" id="back">← ${tr("signIn")}</button><h2 style="margin-top:18px">Восстановление пароля</h2><p class="sub">Укажите email, который использовали при регистрации.</p>
+<form id="forgotForm"><div class="field"><label>Email</label><div class="input"><input id="forgotEmail" type="email" required placeholder="example@email.com"></div></div><button class="primary">Отправить ссылку</button></form><div id="resetResult" style="margin-top:16px"></div></div></section></div>`;
+$$('.langs button').forEach(b=>b.onclick=()=>setLang(b.dataset.lang));$('#theme').onclick=setTheme;$('#back').onclick=loginView;
+$('#forgotForm').onsubmit=e=>{e.preventDefault();api('/api/forgot-password',{method:'POST',body:JSON.stringify({email:$('#forgotEmail').value})}).then(d=>{if(d.debugResetUrl){$('#resetResult').innerHTML='<div class="notice"><span>🔐</span><div class="grow"><strong>Тестовая ссылка восстановления</strong><p><a href="'+esc(d.debugResetUrl)+'">Открыть и задать новый пароль</a></p></div></div>'}else if(d.emailNotConfigured){$('#resetResult').innerHTML='<div class="notice"><span>ℹ️</span><div class="grow"><strong>Email пока не подключён</strong><p>Для отправки ссылок нужно добавить почтовый сервис в настройках Render.</p></div></div>'}else toast(d.message||'Проверьте email')}).catch(err=>toast(err.message))};
+}
+
 function loginView(){
 APP.innerHTML=`<div class="auth">
 <section class="auth-brand"><div class="brand-inner">
@@ -60,7 +78,7 @@ APP.innerHTML=`<div class="auth">
 $$(".langs button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
 $("#theme").onclick=setTheme;
 $("#eye").onclick=()=>{$("#pass").type=$("#pass").type==="password"?"text":"password"};
-$("#forgot").onclick=()=>toast(lang==="ru"?"Функция восстановления пароля готова к подключению к email/SMS.":"Password recovery will connect to email/SMS in the backend.");
+$("#forgot").onclick=forgotView;
 $("#reg").onclick=registerView;
 $("#loginForm").onsubmit=e=>{e.preventDefault();api("/api/login",{method:"POST",body:JSON.stringify({login:$("#login").value,password:$("#pass").value})}).then(d=>{store.set("token",d.token);store.set("user",d.user);store.set("auth",true);role=d.user.role;page="dashboard";store.set("role",role);store.set("page",page);render()}).catch(err=>toast(err.message))};
 }
@@ -86,7 +104,7 @@ APP.innerHTML=`<div class="auth"><section class="auth-brand"><div class="brand-i
 <div class="field"><label>Пароль</label><div class="input"><input type="password" required></div></div>
 <button class="primary">Создать аккаунт</button></form></div></section></div>`;
 $$(".langs button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));$("#theme").onclick=setTheme;$("#back").onclick=registerView;
-$("#regForm").onsubmit=e=>{e.preventDefault();const inputs=$("#regForm").querySelectorAll("input");api("/api/register",{method:"POST",body:JSON.stringify({name:inputs[0].value,email:inputs[2].value,password:inputs[3].value,role:r})}).then(()=>{toast("Аккаунт создан. Теперь войдите.");setTimeout(loginView,700)}).catch(err=>toast(err.message))};
+$("#regForm").onsubmit=e=>{e.preventDefault();const inputs=$("#regForm").querySelectorAll("input");api("/api/register",{method:"POST",body:JSON.stringify({name:(inputs[0].value+" "+inputs[1].value).trim(),email:inputs[2].value,password:inputs[3].value,role:r})}).then(()=>api("/api/login",{method:"POST",body:JSON.stringify({login:inputs[2].value,password:inputs[3].value})})).then(d=>{store.set("token",d.token);store.set("user",d.user);store.set("auth",true);role=d.user.role;page="dashboard";store.set("role",role);store.set("page",page);render()}).catch(err=>toast(err.message))};
 }
 
 const menuFor={
@@ -159,4 +177,5 @@ const u=store.get("user",null); if(u) role=u.role;
 if(!store.get("auth",false)||!store.get("token",null)) return loginView();
 appPage();
 }
-render();
+const resetToken=new URLSearchParams(location.search).get("reset");
+if(resetToken) resetView(resetToken); else render();
