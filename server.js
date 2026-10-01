@@ -7,6 +7,7 @@ const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 3000);
 const DB = path.join(ROOT, 'data', 'db.json');
 const sessions = new Map();
+const loginAttempts = new Map();
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -15,7 +16,7 @@ const MIME = {
 };
 
 const ROLES = ['student', 'teacher', 'parent', 'admin'];
-const COLLECTIONS = ['enrollments','groups', 'schedule', 'grades', 'attendance', 'homework', 'tests', 'news', 'notifications', 'payments'];
+const COLLECTIONS = ['enrollments','groups', 'schedule', 'grades', 'attendance', 'homework', 'tests', 'news', 'notifications', 'payments', 'auditLogs'];
 
 function uuid() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
@@ -44,10 +45,19 @@ function verify(password, user) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 function validPassword(p) { return typeof p === 'string' && p.length >= 8; }
+function normalizeUsername(v) { return String(v || '').trim().toLowerCase().replace(/\\s+/g, '_'); }
+function normalizePhone(v) { return String(v || '').trim().replace(/[^0-9+]/g, ''); }
+function validUsername(v) { return /^[a-zA-Z0-9_.-]{3,32}$/.test(String(v || '')); }
+function validPhone(v) { const p = normalizePhone(v); return /^\+?[0-9]{9,15}$/.test(p); }
+function audit(db, actor, action, entity, entityId, details = '') {
+  ensureArray(db, 'auditLogs');
+  db.auditLogs.push({ id: uuid(), actorId: actor?.id || 'system', actorName: actor?.name || 'System', action, entity, entityId: entityId || '', details: String(details || ''), createdAt: now() });
+  if (db.auditLogs.length > 500) db.auditLogs = db.auditLogs.slice(-500);
+}
 function token() { return crypto.randomBytes(32).toString('hex'); }
 function sha256(v) { return crypto.createHash('sha256').update(String(v)).digest('hex'); }
 function safeUser(u) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role, phone: u.phone || '', bio: u.bio || '', avatar: u.avatar || '', status: u.status || 'active', createdAt: u.createdAt, courseIds: u.courseIds || [] };
+  return { id: u.id, name: u.name, username: u.username || '', role: u.role, phone: u.phone || '', bio: u.bio || '', avatar: u.avatar || '', status: u.status || 'active', createdAt: u.createdAt, lastLoginAt: u.lastLoginAt || '', courseIds: u.courseIds || [] };
 }
 function auth(req) {
   const h = req.headers.authorization || '';
@@ -75,6 +85,12 @@ async function seed() {
     if (!u.hash) { const p = hashPassword(process.env[`POK_${String(u.role).toUpperCase()}_PASSWORD`] || 'ChangeMe123!'); u.salt = p.salt; u.hash = p.hash; }
     u.courseIds = Array.isArray(u.courseIds) ? u.courseIds : [];
     u.status = u.status || 'active'; u.phone = u.phone || ''; u.bio = u.bio || '';
+    if (!u.username) {
+      const base = normalizeUsername(String(u.email || u.name || 'user').split('@')[0]).replace(/[^a-z0-9_.-]/g, '_').slice(0, 24) || 'user';
+      let candidate = base, n = 1;
+      while (db.users.some(x => x !== u && x.username === candidate)) candidate = `${base}_${n++}`;
+      u.username = candidate;
+    } else u.username = normalizeUsername(u.username);
   });
   db.courses.forEach(c => { c.category = c.category || 'General'; c.lessons = Number(c.lessons || 0); c.teacherId = c.teacherId || ''; c.description = c.description || ''; });
   const teacher = db.users.find(u => u.role === 'teacher');
@@ -117,25 +133,33 @@ async function handle(req, res) {
   if (p === '/api/health') return json(res, 200, { ok: true, service: 'Point of Knowledge', time: now() });
 
   if (p === '/api/login' && req.method === 'POST') {
-    const b = await readBody(req); const db = await readDB(); const login = String(b.login || '').trim().toLowerCase();
-    const u = db.users.find(x => String(x.email).toLowerCase() === login && x.status !== 'blocked');
-    if (!u || !verify(b.password || '', u)) return json(res, 401, { error: 'Неверный логин или пароль' });
+    const b = await readBody(req); const db = await readDB(); const login = String(b.login || '').trim().toLowerCase(); const phone = normalizePhone(b.login);
+    const key = `${req.socket.remoteAddress || 'unknown'}:${normalizeUsername(login) || phone}`; const attempt = loginAttempts.get(key) || { count: 0, until: 0 };
+    if (attempt.until > Date.now()) return json(res, 429, { error: 'Слишком много попыток. Повторите через несколько минут.' });
+    const u = db.users.find(x => (x.username === normalizeUsername(login) || normalizePhone(x.phone) === phone || String(x.email || '').toLowerCase() === login) && x.status !== 'blocked');
+    if (!u || !verify(b.password || '', u)) {
+      attempt.count += 1; if (attempt.count >= 5) { attempt.until = Date.now() + 10 * 60 * 1000; attempt.count = 0; } loginAttempts.set(key, attempt);
+      return json(res, 401, { error: 'Неверный username/телефон или пароль' });
+    }
+    loginAttempts.delete(key); u.lastLoginAt = now(); audit(db, u, 'login', 'user', u.id, 'Успешный вход'); await writeDB(db);
     const t = token(); sessions.set(t, safeUser(u)); return json(res, 200, { token: t, user: safeUser(u) });
   }
   if (p === '/api/register' && req.method === 'POST') {
-    const b = await readBody(req); const db = await readDB(); const email = String(b.email || '').trim().toLowerCase();
-    if (!b.name || !email || !validPassword(b.password)) return json(res, 400, { error: 'Имя, email и пароль минимум 8 символов обязательны' });
-    if (db.users.some(u => u.email === email)) return json(res, 409, { error: 'Пользователь уже существует' });
+    const b = await readBody(req); const db = await readDB(); const username = normalizeUsername(b.username); const phone = normalizePhone(b.phone);
+    if (!b.name || !validUsername(username) || !validPhone(phone) || !validPassword(b.password)) return json(res, 400, { error: 'Имя, username, телефон и пароль минимум 8 символов обязательны' });
+    if (db.users.some(u => u.username === username || normalizePhone(u.phone) === phone)) return json(res, 409, { error: 'Username или телефон уже используется' });
     const role = ROLES.includes(b.role) && b.role !== 'admin' ? b.role : 'student'; const hp = hashPassword(b.password);
-    const u = { id: uuid(), name: String(b.name).trim(), email, role, phone: String(b.phone || ''), bio: '', status: 'active', courseIds: [], salt: hp.salt, hash: hp.hash, createdAt: now() };
-    db.users.push(u); await writeDB(db); const t = token(); sessions.set(t, safeUser(u)); return json(res, 201, { token: t, user: safeUser(u) });
+    const u = { id: uuid(), name: String(b.name).trim(), username, phone, role, bio: '', status: 'active', courseIds: [], salt: hp.salt, hash: hp.hash, createdAt: now() };
+    db.users.push(u); audit(db, u, 'register', 'user', u.id, 'Создан аккаунт'); await writeDB(db); const t = token(); sessions.set(t, safeUser(u)); return json(res, 201, { token: t, user: safeUser(u) });
   }
   if (p === '/api/forgot-password' && req.method === 'POST') {
-    const b = await readBody(req); const email = String(b.email || '').trim().toLowerCase(); if (!email) return json(res, 400, { error: 'Укажите email' });
-    const db = await readDB(); const u = db.users.find(x => x.email === email); const out = { ok: true, message: 'Если аккаунт существует, инструкции отправлены на email.' };
+    const b = await readBody(req); const username = normalizeUsername(b.username); const phone = normalizePhone(b.phone);
+    if (!username || !phone) return json(res, 400, { error: 'Укажите username и телефон' });
+    const db = await readDB(); const u = db.users.find(x => x.username === username && normalizePhone(x.phone) === phone); const out = { ok: true, message: 'Если данные совпадают, инструкция подготовлена.' };
     if (!u) return json(res, 200, out);
-    const raw = token(); u.resetTokenHash = sha256(raw); u.resetExpiresAt = Date.now() + 15 * 60 * 1000; await writeDB(db);
-    const sent = await sendResetEmail(email, publicResetUrl(req, raw)); if (!sent && process.env.RESET_DEBUG === 'true') out.debugResetUrl = publicResetUrl(req, raw); return json(res, 200, out);
+    const raw = token(); u.resetTokenHash = sha256(raw); u.resetExpiresAt = Date.now() + 15 * 60 * 1000; audit(db, u, 'password_reset_requested', 'user', u.id, 'Запрошено восстановление пароля'); await writeDB(db);
+    if (process.env.RESET_DEBUG === 'true') out.debugResetUrl = publicResetUrl(req, raw);
+    return json(res, 200, out);
   }
   if (p === '/api/reset-password' && req.method === 'POST') {
     const b = await readBody(req); if (!b.token || !validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' });
@@ -149,14 +173,16 @@ async function handle(req, res) {
 
   if (p === '/api/bootstrap' && req.method === 'GET') {
     const u = requireAuth(req, res); if (!u) return; const db = await readDB(); const view = collectionForUser(db, u);
-    return json(res, 200, { user: safeUser(db.users.find(x => x.id === u.id)), stats: { users: db.users.length, students: db.users.filter(x => x.role === 'student').length, teachers: db.users.filter(x => x.role === 'teacher').length, courses: db.courses.length, groups: db.groups.length }, courses: view.courses, users: view.users.map(safeUser), enrollments: view.enrollments, groups: view.groups || [], schedule: view.schedule || [], grades: view.grades || [], attendance: view.attendance || [], homework: view.homework || [], tests: view.tests || [], news: view.news || [], notifications: view.notifications || [], payments: view.payments || [] });
+    return json(res, 200, { user: safeUser(db.users.find(x => x.id === u.id)), stats: { users: db.users.length, students: db.users.filter(x => x.role === 'student').length, teachers: db.users.filter(x => x.role === 'teacher').length, courses: db.courses.length, groups: db.groups.length }, courses: view.courses, users: view.users.map(safeUser), enrollments: view.enrollments, groups: view.groups || [], schedule: view.schedule || [], grades: view.grades || [], attendance: view.attendance || [], homework: view.homework || [], tests: view.tests || [], news: view.news || [], notifications: view.notifications || [], payments: view.payments || [], auditLogs: u.role === 'admin' ? (db.auditLogs || []).slice(-100).reverse() : [] });
   }
 
   if (p === '/api/profile' && req.method === 'PATCH') {
     const u = requireAuth(req, res); if (!u) return; const b = await readBody(req); const db = await readDB(); const meUser = db.users.find(x => x.id === u.id); if (!meUser) return json(res, 404, { error: 'Пользователь не найден' });
-    Object.assign(meUser, pick(b, ['name','phone','bio','avatar'])); if (b.email && String(b.email).trim().toLowerCase() !== meUser.email) { const email = String(b.email).trim().toLowerCase(); if (db.users.some(x => x.id !== meUser.id && x.email === email)) return json(res, 409, { error: 'Email уже используется' }); meUser.email = email; }
+    Object.assign(meUser, pick(b, ['name','bio','avatar']));
+    if (b.username !== undefined) { const username = normalizeUsername(b.username); if (!validUsername(username)) return json(res, 400, { error: 'Username: 3–32 символа, только латиница, цифры, _, ., -' }); if (db.users.some(x => x.id !== meUser.id && x.username === username)) return json(res, 409, { error: 'Username уже используется' }); meUser.username = username; }
+    if (b.phone !== undefined) { const phone = normalizePhone(b.phone); if (!validPhone(phone)) return json(res, 400, { error: 'Введите корректный номер телефона' }); if (db.users.some(x => x.id !== meUser.id && normalizePhone(x.phone) === phone)) return json(res, 409, { error: 'Телефон уже используется' }); meUser.phone = phone; }
     if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); meUser.salt = hp.salt; meUser.hash = hp.hash; }
-    await writeDB(db); const fresh = safeUser(meUser); for (const [k,v] of sessions) if (v.id === meUser.id) sessions.set(k, fresh); return json(res, 200, { user: fresh });
+    audit(db, meUser, 'profile_update', 'user', meUser.id, 'Обновлён профиль'); await writeDB(db); const fresh = safeUser(meUser); for (const [k,v] of sessions) if (v.id === meUser.id) sessions.set(k, fresh); return json(res, 200, { user: fresh });
   }
 
   // Users
@@ -165,35 +191,41 @@ async function handle(req, res) {
     return json(res, 200, { users: db.users.filter(x => (!role || x.role === role) && matchesSearch(x, q)).map(safeUser) });
   }
   if (p === '/api/users' && req.method === 'POST') {
-    const admin = requireAdmin(req, res); if (!admin) return; const b = await readBody(req); const db = await readDB(); const email = String(b.email || '').trim().toLowerCase();
-    if (!b.name || !email || !ROLES.includes(b.role)) return json(res, 400, { error: 'Имя, email и роль обязательны' }); if (db.users.some(x => x.email === email)) return json(res, 409, { error: 'Email уже используется' });
-    const hp = hashPassword(validPassword(b.password) ? b.password : 'ChangeMe123!'); const u = { id: uuid(), name: String(b.name).trim(), email, role: b.role, phone: String(b.phone || ''), bio: String(b.bio || ''), status: b.status || 'active', courseIds: [], salt: hp.salt, hash: hp.hash, createdAt: now() };
-    db.users.push(u); if (Array.isArray(b.courseIds)) b.courseIds.forEach(id => { if (db.courses.some(c => c.id === id)) { u.courseIds.push(id); db.enrollments.push({ id: uuid(), userId: u.id, courseId: id, progress: 0, joinedAt: now() }); } }); await writeDB(db); return json(res, 201, { user: safeUser(u) });
+    const admin = requireAdmin(req, res); if (!admin) return; const b = await readBody(req); const db = await readDB(); const username = normalizeUsername(b.username), phone = normalizePhone(b.phone);
+    if (!b.name || !validUsername(username) || !validPhone(phone) || !ROLES.includes(b.role)) return json(res, 400, { error: 'Имя, username, телефон и роль обязательны' });
+    if (db.users.some(x => x.username === username || normalizePhone(x.phone) === phone)) return json(res, 409, { error: 'Username или телефон уже используется' });
+    const hp = hashPassword(validPassword(b.password) ? b.password : 'ChangeMe123!'); const u = { id: uuid(), name: String(b.name).trim(), username, role: b.role, phone, bio: String(b.bio || ''), status: b.status || 'active', courseIds: [], salt: hp.salt, hash: hp.hash, createdAt: now() };
+    db.users.push(u); if (Array.isArray(b.courseIds)) b.courseIds.forEach(id => { if (db.courses.some(c => c.id === id)) { u.courseIds.push(id); db.enrollments.push({ id: uuid(), userId: u.id, courseId: id, progress: 0, joinedAt: now() }); } }); audit(db, admin, 'create', 'user', u.id, `Создан пользователь ${u.username}`); await writeDB(db); return json(res, 201, { user: safeUser(u) });
   }
   const userMatch = p.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch) {
     const id = decodeURIComponent(userMatch[1]); const admin = requireAdmin(req, res); if (!admin) return; const db = await readDB(); const u = db.users.find(x => x.id === id); if (!u) return json(res, 404, { error: 'Пользователь не найден' });
     if (req.method === 'GET') return json(res, 200, { user: safeUser(u), enrollments: db.enrollments.filter(e => e.userId === id) });
-    if (req.method === 'PATCH') { const b = await readBody(req); Object.assign(u, pick(b, ['name','phone','bio','avatar','status'])); if (b.role && ROLES.includes(b.role)) u.role = b.role; if (b.email) { const email = String(b.email).trim().toLowerCase(); if (db.users.some(x => x.id !== id && x.email === email)) return json(res, 409, { error: 'Email уже используется' }); u.email = email; } if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); u.salt = hp.salt; u.hash = hp.hash; } await writeDB(db); return json(res, 200, { user: safeUser(u) }); }
-    if (req.method === 'DELETE') { if (id === admin.id) return json(res, 400, { error: 'Нельзя удалить текущего администратора' }); db.users = db.users.filter(x => x.id !== id); db.enrollments = db.enrollments.filter(e => e.userId !== id); db.grades = db.grades.filter(e => e.userId !== id); db.attendance = db.attendance.filter(e => e.userId !== id); await writeDB(db); return json(res, 200, { ok: true }); }
+    if (req.method === 'PATCH') { const b = await readBody(req); Object.assign(u, pick(b, ['name','bio','avatar','status'])); if (b.username !== undefined) { const username = normalizeUsername(b.username); if (!validUsername(username)) return json(res, 400, { error: 'Некорректный username' }); if (db.users.some(x => x.id !== id && x.username === username)) return json(res, 409, { error: 'Username уже используется' }); u.username = username; } if (b.phone !== undefined) { const phone = normalizePhone(b.phone); if (!validPhone(phone)) return json(res, 400, { error: 'Некорректный телефон' }); if (db.users.some(x => x.id !== id && normalizePhone(x.phone) === phone)) return json(res, 409, { error: 'Телефон уже используется' }); u.phone = phone; } if (b.role && ROLES.includes(b.role)) u.role = b.role; if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); u.salt = hp.salt; u.hash = hp.hash; } audit(db, admin, 'update', 'user', u.id, `Изменён пользователь ${u.username}`); await writeDB(db); return json(res, 200, { user: safeUser(u) }); }
+    if (req.method === 'DELETE') { if (id === admin.id) return json(res, 400, { error: 'Нельзя удалить текущего администратора' }); db.users = db.users.filter(x => x.id !== id); db.enrollments = db.enrollments.filter(e => e.userId !== id); db.grades = db.grades.filter(e => e.userId !== id); db.attendance = db.attendance.filter(e => e.userId !== id); audit(db, admin, 'delete', 'user', id, 'Удалён пользователь'); await writeDB(db); return json(res, 200, { ok: true }); }
   }
 
   // Courses
   if (p === '/api/courses' && req.method === 'GET') { const u = requireAuth(req,res); if (!u) return; const db=await readDB(); return json(res,200,{courses:collectionForUser(db,u).courses}); }
   if (p === '/api/courses' && req.method === 'POST') {
-    const admin = requireAdmin(req,res); if(!admin)return; const b=await readBody(req); if(!b.title)return json(res,400,{error:'Название курса обязательно'}); const db=await readDB(); const c={id:uuid(),title:String(b.title),category:String(b.category||'General'),description:String(b.description||''),lessons:Number(b.lessons||0),teacherId:String(b.teacherId||''),createdAt:now()}; db.courses.push(c); await writeDB(db); return json(res,201,{course:c});
+    const admin = requireAdmin(req,res); if(!admin)return; const b=await readBody(req); if(!b.title)return json(res,400,{error:'Название курса обязательно'}); const db=await readDB(); const c={id:uuid(),title:String(b.title),category:String(b.category||'General'),description:String(b.description||''),lessons:Number(b.lessons||0),teacherId:String(b.teacherId||''),createdAt:now()}; db.courses.push(c); audit(db, admin, 'create', 'course', c.id, `Создан курс ${c.title}`); await writeDB(db); return json(res,201,{course:c});
   }
   const courseMatch=p.match(/^\/api\/courses\/([^/]+)$/);
-  if(courseMatch){const id=decodeURIComponent(courseMatch[1]); const admin=requireAdmin(req,res);if(!admin)return;const db=await readDB();const c=db.courses.find(x=>x.id===id);if(!c)return json(res,404,{error:'Курс не найден'});if(req.method==='PATCH'){const b=await readBody(req);Object.assign(c,pick(b,['title','category','description','teacherId']));if(b.lessons!==undefined)c.lessons=Number(b.lessons)||0;await writeDB(db);return json(res,200,{course:c});}if(req.method==='DELETE'){db.courses=db.courses.filter(x=>x.id!==id);db.enrollments=db.enrollments.filter(e=>e.courseId!==id);db.users.forEach(u=>u.courseIds=(u.courseIds||[]).filter(x=>x!==id));await writeDB(db);return json(res,200,{ok:true});}}
+  if(courseMatch){const id=decodeURIComponent(courseMatch[1]); const admin=requireAdmin(req,res);if(!admin)return;const db=await readDB();const c=db.courses.find(x=>x.id===id);if(!c)return json(res,404,{error:'Курс не найден'});if(req.method==='PATCH'){const b=await readBody(req);Object.assign(c,pick(b,['title','category','description','teacherId']));if(b.lessons!==undefined)c.lessons=Number(b.lessons)||0;audit(db, admin, 'update', 'course', c.id, `Изменён курс ${c.title}`);await writeDB(db);return json(res,200,{course:c});}if(req.method==='DELETE'){db.courses=db.courses.filter(x=>x.id!==id);db.enrollments=db.enrollments.filter(e=>e.courseId!==id);db.users.forEach(u=>u.courseIds=(u.courseIds||[]).filter(x=>x!==id));audit(db, admin, 'delete', 'course', id, 'Удалён курс');await writeDB(db);return json(res,200,{ok:true});}}
 
   // Enrollment / move student to another course
   if (p === '/api/enrollments' && req.method === 'GET') { const u=requireAuth(req,res);if(!u)return;const db=await readDB();return json(res,200,{enrollments:collectionForUser(db,u).enrollments}); }
-  if (p === '/api/enrollments' && req.method === 'POST') { const admin=requireAdmin(req,res);if(!admin)return;const b=await readBody(req);const db=await readDB();const user=db.users.find(x=>x.id===b.userId),course=db.courses.find(x=>x.id===b.courseId);if(!user||user.role!=='student')return json(res,400,{error:'Выберите ученика'});if(!course)return json(res,400,{error:'Выберите курс'});if(db.enrollments.some(e=>e.userId===user.id&&e.courseId===course.id))return json(res,409,{error:'Ученик уже записан на этот курс'});const e={id:uuid(),userId:user.id,courseId:course.id,progress:0,joinedAt:now()};db.enrollments.push(e);user.courseIds=Array.from(new Set([...(user.courseIds||[]),course.id]));await writeDB(db);return json(res,201,{enrollment:e}); }
-  const enMatch=p.match(/^\/api\/enrollments\/([^/]+)$/); if(enMatch&&req.method==='DELETE'){const admin=requireAdmin(req,res);if(!admin)return;const db=await readDB();const e=db.enrollments.find(x=>x.id===decodeURIComponent(enMatch[1]));if(!e)return json(res,404,{error:'Запись не найдена'});db.enrollments=db.enrollments.filter(x=>x.id!==e.id);const u=db.users.find(x=>x.id===e.userId);if(u)u.courseIds=(u.courseIds||[]).filter(id=>id!==e.courseId);await writeDB(db);return json(res,200,{ok:true});}
+  if (p === '/api/enrollments' && req.method === 'POST') { const admin=requireAdmin(req,res);if(!admin)return;const b=await readBody(req);const db=await readDB();const user=db.users.find(x=>x.id===b.userId),course=db.courses.find(x=>x.id===b.courseId);if(!user||user.role!=='student')return json(res,400,{error:'Выберите ученика'});if(!course)return json(res,400,{error:'Выберите курс'});if(db.enrollments.some(e=>e.userId===user.id&&e.courseId===course.id))return json(res,409,{error:'Ученик уже записан на этот курс'});const e={id:uuid(),userId:user.id,courseId:course.id,progress:0,joinedAt:now()};db.enrollments.push(e);user.courseIds=Array.from(new Set([...(user.courseIds||[]),course.id]));audit(db, admin, 'enroll', 'enrollment', e.id, `${user.name} → ${course.title}`);await writeDB(db);return json(res,201,{enrollment:e}); }
+  const enMatch=p.match(/^\/api\/enrollments\/([^/]+)$/); if(enMatch&&req.method==='DELETE'){const admin=requireAdmin(req,res);if(!admin)return;const db=await readDB();const e=db.enrollments.find(x=>x.id===decodeURIComponent(enMatch[1]));if(!e)return json(res,404,{error:'Запись не найдена'});db.enrollments=db.enrollments.filter(x=>x.id!==e.id);const u=db.users.find(x=>x.id===e.userId);if(u)u.courseIds=(u.courseIds||[]).filter(id=>id!==e.courseId);audit(db, admin, 'unenroll', 'enrollment', e.id, 'Удалена запись о курсе');await writeDB(db);return json(res,200,{ok:true});}
 
   // Generic CRUD collections
   const cm=p.match(/^\/api\/(groups|schedule|grades|attendance|homework|tests|news|notifications|payments)(?:\/([^/]+))?$/);
-  if(cm){const collection=cm[1],id=cm[2]?decodeURIComponent(cm[2]):null;const u=requireAuth(req,res);if(!u)return;const db=await readDB();if(req.method==='GET'){let rows=db[collection]||[];if(collection==='news'||collection==='notifications') rows=rows.slice().sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));return json(res,200,{[collection]:rows});}if(u.role!=='admin'&&!(u.role==='teacher'&&['grades','attendance','homework','tests','groups','schedule'].includes(collection)))return json(res,403,{error:'Недостаточно прав'});if(req.method==='POST'){const b=await readBody(req);const row=Object.assign({id:uuid(),createdAt:now()},b);db[collection].push(row);await writeDB(db);return json(res,201,{[collection.slice(0,-1)]:row});}if(req.method==='PATCH'&&id){const row=db[collection].find(x=>x.id===id);if(!row)return json(res,404,{error:'Запись не найдена'});Object.assign(row,await readBody(req));await writeDB(db);return json(res,200,{ok:true,row});}if(req.method==='DELETE'&&id){db[collection]=db[collection].filter(x=>x.id!==id);await writeDB(db);return json(res,200,{ok:true});}}
+  if(cm){const collection=cm[1],id=cm[2]?decodeURIComponent(cm[2]):null;const u=requireAuth(req,res);if(!u)return;const db=await readDB();if(req.method==='GET'){let rows=db[collection]||[];if(collection==='news'||collection==='notifications') rows=rows.slice().sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));return json(res,200,{[collection]:rows});}if(u.role!=='admin'&&!(u.role==='teacher'&&['grades','attendance','homework','tests','groups','schedule'].includes(collection)))return json(res,403,{error:'Недостаточно прав'});if(req.method==='POST'){const b=await readBody(req);const row=Object.assign({id:uuid(),createdAt:now()},b);db[collection].push(row);audit(db,u,'create',collection,row.id,`Создана запись в ${collection}`);await writeDB(db);return json(res,201,{[collection.slice(0,-1)]:row});}if(req.method==='PATCH'&&id){const row=db[collection].find(x=>x.id===id);if(!row)return json(res,404,{error:'Запись не найдена'});Object.assign(row,await readBody(req));audit(db,u,'update',collection,id,`Изменена запись в ${collection}`);await writeDB(db);return json(res,200,{ok:true,row});}if(req.method==='DELETE'&&id){db[collection]=db[collection].filter(x=>x.id!==id);audit(db,u,'delete',collection,id,`Удалена запись из ${collection}`);await writeDB(db);return json(res,200,{ok:true});}}
+
+  if (p === '/api/audit-logs' && req.method === 'GET') {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    const db = await readDB(); return json(res, 200, { auditLogs: (db.auditLogs || []).slice(-100).reverse() });
+  }
 
   const file = p === '/' ? '/index.html' : p; const filePath=path.normalize(path.join(ROOT,file)); if(!filePath.startsWith(ROOT))return send(res,403,'Forbidden');
   try{const data=await fs.readFile(filePath);res.writeHead(200,{'Content-Type':MIME[path.extname(filePath)]||'application/octet-stream'});res.end(data);}catch{send(res,404,'Not found');}

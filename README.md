@@ -17,10 +17,11 @@ Functional educational platform prototype for students, teachers, parents and ad
 
 ## Demo accounts
 All demo accounts use `ChangeMe123!` unless you set role-specific environment passwords.
-- admin@pointofknowledge.tj
-- teacher@pointofknowledge.tj
-- parent@pointofknowledge.tj
-- student@pointofknowledge.tj
+- `admin` — `+992900000001`
+- `teacher` — `+992900000002`
+- `parent` — `+992900000003`
+- `student` — `+992900000004`
+Older deployed databases may still contain legacy email fields; the current interface and new accounts use only username + phone.
 
 ## Local
 ```bash
@@ -35,3 +36,11 @@ Runtime: Node 22.x (from `.node-version` / `package.json`).
 
 ### Production note
 The current JSON store is suitable for prototype/testing. Render Web Services use ephemeral local storage, so real production deployment should migrate the data layer to PostgreSQL before storing real student records, grades, payments or documents.
+
+
+## v4 roadmap update
+- Authentication uses unique username + phone number (email is no longer shown as an account identifier).
+- Login accepts username or phone.
+- Admin action history (audit log) tracks security and CRUD changes.
+- Global search filters visible users, courses and records.
+- Legacy email login is accepted only for backward compatibility with older databases.
