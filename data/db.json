@@ -3,46 +3,45 @@
     {
       "id": "admin-1",
       "name": "Point Admin",
-      "email": "admin@pointofknowledge.tj",
       "role": "admin",
       "salt": "5e4353cedb9652da28de5e47e9684840",
       "hash": "be895bd0d82c434fed2663670749981aa394e2f47ec1200a4bc24db13f149d7d20750c1c0489966f9f97349a19af78664b88210c5baf015f2ce7ef4f4364afc3",
       "createdAt": "2026-10-01T00:00:00.000Z",
       "courseIds": [],
       "status": "active",
-      "phone": "",
-      "bio": ""
+      "phone": "+992900000001",
+      "bio": "",
+      "username": "admin"
     },
     {
       "id": "teacher-1",
       "name": "Anna Teacher",
-      "email": "teacher@pointofknowledge.tj",
       "role": "teacher",
       "salt": "e8df255bd5218ebcafee7695c9151330",
       "hash": "07e67d4dfd87b5b1d7fc3bcccfc400e1a88f82c1bb36dd351f698a655ac5ef7b09631ef0e1e88f30a532988edec02d69600e386f2f5ffe0e976ed28ca298638f",
       "createdAt": "2026-10-01T00:00:00.000Z",
       "courseIds": [],
       "status": "active",
-      "phone": "",
-      "bio": ""
+      "phone": "+992900000002",
+      "bio": "",
+      "username": "teacher"
     },
     {
       "id": "parent-1",
       "name": "Saida Parent",
-      "email": "parent@pointofknowledge.tj",
       "role": "parent",
       "salt": "90a8bf16ade245d626784a4209cf5281",
       "hash": "c9013160a67f1a6b05fa609ecc6ec61eb32a5d48ea014626846b108f52e0f364ccef6b97161708b4db503f3d71a96f65fc69444ea533bf572e86c76a1dff53aa",
       "createdAt": "2026-10-01T00:00:00.000Z",
       "courseIds": [],
       "status": "active",
-      "phone": "",
-      "bio": ""
+      "phone": "+992900000003",
+      "bio": "",
+      "username": "parent"
     },
     {
       "id": "student-1",
       "name": "Ahmad Student",
-      "email": "student@pointofknowledge.tj",
       "role": "student",
       "salt": "3c60f7b94f15259941d7e13c1b858964",
       "hash": "ca94ef07b5ca47aaf41dd831d43430a7718662ac55e5848d866759c98e574051836e9c3ccd399772b2709b76d421a632aa157f3645f6d9b8cabaf0ccf2fb8dfa",
@@ -52,8 +51,9 @@
         "c2"
       ],
       "status": "active",
-      "phone": "",
-      "bio": ""
+      "phone": "+992900000004",
+      "bio": "",
+      "username": "student"
     }
   ],
   "courses": [
@@ -226,5 +226,6 @@
       "status": "Оплачено",
       "createdAt": "2026-10-01T18:39:23.239Z"
     }
-  ]
+  ],
+  "auditLogs": []
 }
