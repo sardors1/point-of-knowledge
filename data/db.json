@@ -7,7 +7,11 @@
       "role": "admin",
       "salt": "5e4353cedb9652da28de5e47e9684840",
       "hash": "be895bd0d82c434fed2663670749981aa394e2f47ec1200a4bc24db13f149d7d20750c1c0489966f9f97349a19af78664b88210c5baf015f2ce7ef4f4364afc3",
-      "createdAt": "2026-10-01T00:00:00.000Z"
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "courseIds": [],
+      "status": "active",
+      "phone": "",
+      "bio": ""
     },
     {
       "id": "teacher-1",
@@ -16,7 +20,11 @@
       "role": "teacher",
       "salt": "e8df255bd5218ebcafee7695c9151330",
       "hash": "07e67d4dfd87b5b1d7fc3bcccfc400e1a88f82c1bb36dd351f698a655ac5ef7b09631ef0e1e88f30a532988edec02d69600e386f2f5ffe0e976ed28ca298638f",
-      "createdAt": "2026-10-01T00:00:00.000Z"
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "courseIds": [],
+      "status": "active",
+      "phone": "",
+      "bio": ""
     },
     {
       "id": "parent-1",
@@ -25,7 +33,11 @@
       "role": "parent",
       "salt": "90a8bf16ade245d626784a4209cf5281",
       "hash": "c9013160a67f1a6b05fa609ecc6ec61eb32a5d48ea014626846b108f52e0f364ccef6b97161708b4db503f3d71a96f65fc69444ea533bf572e86c76a1dff53aa",
-      "createdAt": "2026-10-01T00:00:00.000Z"
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "courseIds": [],
+      "status": "active",
+      "phone": "",
+      "bio": ""
     },
     {
       "id": "student-1",
@@ -34,7 +46,14 @@
       "role": "student",
       "salt": "3c60f7b94f15259941d7e13c1b858964",
       "hash": "ca94ef07b5ca47aaf41dd831d43430a7718662ac55e5848d866759c98e574051836e9c3ccd399772b2709b76d421a632aa157f3645f6d9b8cabaf0ccf2fb8dfa",
-      "createdAt": "2026-10-01T00:00:00.000Z"
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "courseIds": [
+        "c1",
+        "c2"
+      ],
+      "status": "active",
+      "phone": "",
+      "bio": ""
     }
   ],
   "courses": [
@@ -43,28 +62,36 @@
       "title": "English B2",
       "category": "English",
       "progress": 82,
-      "lessons": 10
+      "lessons": 10,
+      "teacherId": "teacher-1",
+      "description": ""
     },
     {
       "id": "c2",
       "title": "IELTS",
       "category": "Exam Prep",
       "progress": 74,
-      "lessons": 14
+      "lessons": 14,
+      "teacherId": "teacher-1",
+      "description": ""
     },
     {
       "id": "c3",
       "title": "Grammar Advanced",
       "category": "Grammar",
       "progress": 68,
-      "lessons": 12
+      "lessons": 12,
+      "teacherId": "",
+      "description": ""
     },
     {
       "id": "c4",
       "title": "Speaking Club",
       "category": "Speaking",
       "progress": 91,
-      "lessons": 8
+      "lessons": 8,
+      "teacherId": "",
+      "description": ""
     }
   ],
   "news": [
@@ -85,6 +112,119 @@
       "title": "Поздравляем учеников месяца!",
       "body": "Итоги месячного рейтинга уже опубликованы.",
       "createdAt": "2026-10-01T11:00:00.000Z"
+    }
+  ],
+  "enrollments": [
+    {
+      "id": "ebe7d9e3-052d-483b-812b-a8a1ba066b1a",
+      "userId": "student-1",
+      "courseId": "c1",
+      "progress": 82,
+      "joinedAt": "2026-10-01T18:39:23.238Z"
+    },
+    {
+      "id": "cf293294-2d5a-48a3-886d-a43e24474d5d",
+      "userId": "student-1",
+      "courseId": "c2",
+      "progress": 74,
+      "joinedAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "groups": [
+    {
+      "id": "5e485dcc-7e5f-4887-ab05-6791b1fc15f8",
+      "name": "English B2 · группа A",
+      "courseName": "English B2",
+      "teacherName": "Anna Teacher",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    },
+    {
+      "id": "0d4d551c-449e-432b-b4bc-c3311dc66f69",
+      "name": "IELTS · группа B",
+      "courseName": "IELTS",
+      "teacherName": "Anna Teacher",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "schedule": [
+    {
+      "id": "bcf2c0d4-ced7-493b-bb78-33b5d89c9760",
+      "date": "2026-10-02",
+      "time": "10:00",
+      "courseName": "English B2",
+      "room": "204",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    },
+    {
+      "id": "36c7b0f4-8e74-4995-8fa3-3fb4a4be0612",
+      "date": "2026-10-02",
+      "time": "14:00",
+      "courseName": "IELTS",
+      "room": "102",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "grades": [
+    {
+      "id": "e3f027e6-6f98-4b20-8a6f-70642cc1026f",
+      "studentName": "Ahmad Student",
+      "courseName": "English B2",
+      "topic": "Grammar",
+      "score": 92,
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    },
+    {
+      "id": "ae90827f-0bb1-4afd-8b83-ded8c339f6ea",
+      "studentName": "Ahmad Student",
+      "courseName": "English B2",
+      "topic": "Speaking",
+      "score": 95,
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "attendance": [
+    {
+      "id": "4b801f6a-50b7-47d9-a46c-1536ae7b04b8",
+      "date": "2026-10-01",
+      "studentName": "Ahmad Student",
+      "courseName": "English B2",
+      "status": "Присутствует",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "homework": [
+    {
+      "id": "d4ffdd76-2709-4b97-a380-8e18d1ebed71",
+      "title": "Grammar Unit 5",
+      "courseName": "English B2",
+      "dueDate": "2026-10-04",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "tests": [
+    {
+      "id": "a34065fb-9b4d-4a7c-a48b-b5fe3f091613",
+      "title": "English B2 — Unit 5",
+      "courseName": "English B2",
+      "questions": 20,
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "db9166c2-4fd5-43d5-a2a3-4f59585d2f8a",
+      "title": "Новое расписание",
+      "body": "Расписание на эту неделю обновлено.",
+      "createdAt": "2026-10-01T18:39:23.239Z"
+    }
+  ],
+  "payments": [
+    {
+      "id": "7b62850a-f86c-47d1-807e-3357a565f964",
+      "studentName": "Ahmad Student",
+      "amount": 500,
+      "status": "Оплачено",
+      "createdAt": "2026-10-01T18:39:23.239Z"
     }
   ]
 }
