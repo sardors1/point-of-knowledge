@@ -1,0 +1,9 @@
+{
+  "name":"Point of Knowledge — Нуқтаи Дониш",
+  "short_name":"Point of Knowledge",
+  "start_url":"./index.html",
+  "display":"standalone",
+  "background_color":"#f5f8f6",
+  "theme_color":"#0b8f3c",
+  "icons":[{"src":"assets/logo.png","sizes":"512x512","type":"image/png"}]
+}
