@@ -1,46 +1,32 @@
-# Point of Knowledge — Нуқтаи Дониш
+# Point of Knowledge 4.1
 
-Functional educational platform prototype for students, teachers, parents and administrators.
+Educational center platform for Point of Knowledge / Нуқтаи Дониш.
 
-## Included
-- RU / TJ / UZ / EN
-- automatic light/dark theme + manual switch
-- login, registration, logout, password reset API
-- profiles and profile editing
-- admin user management: create/edit/block/delete
-- course management: create/edit/delete, assign teacher
-- student enrollment and move-to-course workflow
-- course student list and remove enrollment
-- CRUD pages for groups, schedule, grades, attendance, homework, tests, news, notifications and payments
-- responsive desktop/mobile navigation
-- Node.js 22 server and JSON data store
-
-## Demo accounts
-All demo accounts use `ChangeMe123!` unless you set role-specific environment passwords.
-- `admin` — `+992900000001`
-- `teacher` — `+992900000002`
-- `parent` — `+992900000003`
-- `student` — `+992900000004`
-Older deployed databases may still contain legacy email fields; the current interface and new accounts use only username + phone.
+## 4.1 highlights
+- Username + phone login (email is not required as a login).
+- Roles: Admin, Teacher, Parent, Student.
+- Server-side role permissions and blocked-account protection.
+- Teacher data is scoped to assigned courses.
+- Explicit Parent → Student relationships.
+- Parent portal with linked children and academic summary.
+- Admin can link parents to students.
+- CRUD for users, courses, enrollments and educational records.
+- Audit log for important administrative actions.
+- RU / TJ / UZ / EN.
+- Responsive desktop/mobile UI with light/dark mode.
 
 ## Local
 ```bash
 npm start
 ```
-Open http://localhost:3000
 
-## Render
-Build command: `npm install`
-Start command: `npm start`
-Runtime: Node 22.x (from `.node-version` / `package.json`).
+## Demo accounts
+- admin / +992900000001
+- teacher / +992900000002
+- parent / +992900000003
+- student / +992900000004
 
-### Production note
-The current JSON store is suitable for prototype/testing. Render Web Services use ephemeral local storage, so real production deployment should migrate the data layer to PostgreSQL before storing real student records, grades, payments or documents.
+Default demo password: `ChangeMe123!`
 
-
-## v4 roadmap update
-- Authentication uses unique username + phone number (email is no longer shown as an account identifier).
-- Login accepts username or phone.
-- Admin action history (audit log) tracks security and CRUD changes.
-- Global search filters visible users, courses and records.
-- Legacy email login is accepted only for backward compatibility with older databases.
+## Production roadmap
+The current stable branch still uses JSON persistence for compatibility with the working v4 deployment. PostgreSQL migration is planned after this v4.1 validation so the Live release is not broken during the transition.

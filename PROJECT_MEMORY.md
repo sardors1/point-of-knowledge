@@ -1,46 +1,32 @@
-# Point of Knowledge — Project Memory
+# Point of Knowledge — project memory
 
 ## Current baseline
-- Production deployment: Render Web Service.
-- Repository: `sardors1/point-of-knowledge`.
-- Runtime: Node.js 22.
-- Data store: `data/db.json` (prototype; PostgreSQL recommended for real production data).
-- Core CRUD is already working for users, students, teachers, courses, enrollments and learning records.
-- Responsive UI with RU/TJ/UZ/EN and light/dark themes.
-- Logout, profiles, dashboard and mobile navigation are implemented.
+- Live educational platform on Render.
+- Stable working release: v4.0.0.
+- Stack: Node.js 22, vanilla HTML/CSS/JS, JSON data store in `data/db.json`.
+- Login uses username or phone + password; email is not the primary login.
+- Roles: admin, teacher, parent, student.
+- Languages: RU / TJ / UZ / EN.
+- Green-accent responsive UI, light/dark theme.
+- Existing CRUD: users, students, teachers, courses, enrollments, groups, schedule, grades, attendance, homework, tests, news, notifications, payments.
+- Audit log exists.
 
-## Identity decision
-The primary account identifiers are:
-1. `username` — unique, 3–32 chars: letters, numbers, `_`, `.`, `-`.
-2. `phone` — unique normalized phone number.
-3. password.
-Email is not shown in the current UI and is not required for new accounts. Legacy email fields/login may remain only to avoid breaking older deployed data.
+## v4.1 improvements
+- Server-side role permission map.
+- Blocked accounts are rejected at authentication middleware.
+- Teacher data visibility is scoped to assigned courses.
+- Parent → child relationships are stored explicitly in `parentChildren`.
+- Parent bootstrap now includes linked children, their courses and relevant academic records.
+- Admin can link a parent to a student through the API and UI.
+- Parent dashboard has a real children page with course and grade summary.
+- Generic collection GET endpoints now apply role-based visibility instead of returning unrestricted data.
+- Deleting a user also removes parent-child relationships.
+- Last active admin cannot be demoted.
 
-## v4 improvements in this build
-- Login by username or phone.
-- Registration requires username + phone.
-- Profile and admin user management use username + phone.
-- Audit log for login, registration and CRUD/security actions.
-- Admin History page.
-- Global client-side search across visible tables/cards.
-- Basic login rate limiting: 5 failed attempts per key triggers a 10-minute cooldown.
-- `lastLoginAt` tracking.
-- Existing demo users migrated to usernames and demo phone numbers.
-
-## Product direction
-Continue improving in this order:
-1. Role/permission matrix and least-privilege enforcement.
-2. PostgreSQL migration for production persistence.
-3. Groups and schedule as first-class relational entities.
-4. Attendance, grades, homework and tests linked by IDs rather than display names.
-5. Notifications and event center.
-6. Analytics and reporting.
-7. Export to XLSX/PDF.
-8. Parent ↔ child relationships.
-9. File/document storage.
-10. Backups, restore workflow, monitoring and automated tests.
-11. Stronger authentication: session rotation, optional 2FA/SMS verification, password recovery provider.
-12. Final UI/UX polish and accessibility.
-
-## Working rule
-Never remove a working feature without a migration path. Before large changes, create a Git commit/tag or backup so the last working deployment can be restored.
+## Next planned stages
+1. PostgreSQL migration after v4.1 is validated on Live.
+2. Full relational groups/classes/lessons model.
+3. Real attendance and gradebook workflow.
+4. Parent portal with child selector.
+5. Notifications center and audit improvements.
+6. Analytics, export and PWA enhancements.

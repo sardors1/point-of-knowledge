@@ -16,7 +16,14 @@ const MIME = {
 };
 
 const ROLES = ['student', 'teacher', 'parent', 'admin'];
-const COLLECTIONS = ['enrollments','groups', 'schedule', 'grades', 'attendance', 'homework', 'tests', 'news', 'notifications', 'payments', 'auditLogs'];
+const COLLECTIONS = ['enrollments','groups', 'schedule', 'grades', 'attendance', 'homework', 'tests', 'news', 'notifications', 'payments', 'auditLogs', 'parentChildren'];
+const ROLE_PERMISSIONS = {
+  admin: ['*'],
+  teacher: ['view:users','view:courses','manage:groups','manage:schedule','manage:grades','manage:attendance','manage:homework','manage:tests','view:news','view:notifications','view:payments'],
+  student: ['view:courses','view:schedule','view:grades','view:attendance','view:homework','view:tests','view:news','view:notifications','view:payments'],
+  parent: ['view:children','view:schedule','view:grades','view:attendance','view:payments','view:news','view:notifications']
+};
+function hasPermission(user, permission) { return user?.role === 'admin' || (ROLE_PERMISSIONS[user?.role] || []).includes(permission); }
 
 function uuid() { return crypto.randomUUID(); }
 function now() { return new Date().toISOString(); }
@@ -63,7 +70,7 @@ function auth(req) {
   const h = req.headers.authorization || '';
   return h.startsWith('Bearer ') ? sessions.get(h.slice(7)) || null : null;
 }
-function requireAuth(req, res) { const u = auth(req); if (!u) { json(res, 401, { error: 'Unauthorized' }); return null; } return u; }
+function requireAuth(req, res) { const u = auth(req); if (!u) { json(res, 401, { error: 'Unauthorized' }); return null; } if (u.status === 'blocked') { json(res, 403, { error: 'Аккаунт заблокирован' }); return null; } return u; }
 function requireAdmin(req, res) { const u = requireAuth(req, res); if (!u) return null; if (u.role !== 'admin') { json(res, 403, { error: 'Только администратор' }); return null; } return u; }
 function publicResetUrl(req, raw) { const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim(); return `${proto}://${req.headers.host || 'localhost:3000'}/?reset=${encodeURIComponent(raw)}`; }
 async function sendResetEmail(to, url) {
@@ -81,6 +88,12 @@ async function seed() {
   const db = await readDB();
   ensureArray(db, 'users'); ensureArray(db, 'courses');
   COLLECTIONS.forEach(k => ensureArray(db, k));
+  // Parent → child relationships are stored explicitly instead of being inferred from names.
+  if (!db.parentChildren.length) {
+    const parent = db.users.find(u => u.role === 'parent');
+    const student = db.users.find(u => u.role === 'student');
+    if (parent && student) db.parentChildren.push({ id: uuid(), parentId: parent.id, studentId: student.id, createdAt: now() });
+  }
   db.users.forEach(u => {
     if (!u.hash) { const p = hashPassword(process.env[`POK_${String(u.role).toUpperCase()}_PASSWORD`] || 'ChangeMe123!'); u.salt = p.salt; u.hash = p.hash; }
     u.courseIds = Array.isArray(u.courseIds) ? u.courseIds : [];
@@ -113,17 +126,44 @@ async function seed() {
 function matchesSearch(obj, q) { if (!q) return true; return JSON.stringify(obj).toLowerCase().includes(String(q).toLowerCase()); }
 function collectionForUser(db, user) {
   if (user.role === 'admin') return db;
-  const ownCourseIds = user.role === 'teacher' ? db.courses.filter(c => c.teacherId === user.id).map(c => c.id) : (user.courseIds || []);
-  const users = user.role === 'teacher' ? db.users.filter(u => u.id === user.id || (u.role === 'student' && (u.courseIds || []).some(id => ownCourseIds.includes(id)))) : db.users.filter(u => u.id === user.id);
+  const childIds = user.role === 'parent' ? db.parentChildren.filter(x => x.parentId === user.id).map(x => x.studentId) : [];
+  const childUsers = childIds.map(id => db.users.find(u => u.id === id)).filter(Boolean);
+  const ownCourseIds = user.role === 'teacher' ? db.courses.filter(c => c.teacherId === user.id).map(c => c.id) : user.role === 'parent' ? [...new Set(childUsers.flatMap(u => u.courseIds || []))] : (user.courseIds || []);
+  const users = user.role === 'teacher' ? db.users.filter(u => u.id === user.id || (u.role === 'student' && (u.courseIds || []).some(id => ownCourseIds.includes(id)))) : user.role === 'parent' ? [db.users.find(u => u.id === user.id), ...childUsers].filter(Boolean) : db.users.filter(u => u.id === user.id);
   const courses = db.courses.filter(c => ownCourseIds.includes(c.id));
-  const enrollments = db.enrollments.filter(e => user.role === 'teacher' ? ownCourseIds.includes(e.courseId) : e.userId === user.id);
+  const enrollments = db.enrollments.filter(e => user.role === 'teacher' ? ownCourseIds.includes(e.courseId) : user.role === 'parent' ? childIds.includes(e.userId) : e.userId === user.id);
   const allowedStudents = new Set(users.filter(u => u.role === 'student').map(u => u.id));
   const filterRows = (key) => {
     if (user.role === 'teacher') return (db[key] || []).filter(r => ownCourseIds.includes(r.courseId) || ownCourseIds.includes((courses.find(c => c.title === r.courseName) || {}).id) || allowedStudents.has(r.userId));
-    if (user.role === 'student') return (db[key] || []).filter(r => r.userId === user.id || r.studentId === user.id || r.studentName === user.name);
+    if (user.role === 'parent') return (db[key] || []).filter(r => childIds.includes(r.userId) || childIds.includes(r.studentId) || childIds.includes(db.users.find(u => u.name === r.studentName)?.id) || ownCourseIds.includes(r.courseId) || ownCourseIds.includes((courses.find(c => c.title === r.courseName) || {}).id));
+    if (user.role === 'student') return (db[key] || []).filter(r => r.userId === user.id || r.studentId === user.id || r.studentName === user.name || ownCourseIds.includes(r.courseId) || ownCourseIds.includes((courses.find(c => c.title === r.courseName) || {}).id));
     return [];
   };
-  return Object.assign({}, db, { users, courses, enrollments, groups: user.role === 'teacher' ? db.groups.filter(g => ownCourseIds.includes((courses.find(c => c.title === g.courseName) || {}).id) || g.teacherName === user.name) : [], schedule: user.role === 'teacher' ? db.schedule.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)) : db.schedule.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)), grades: filterRows('grades'), attendance: filterRows('attendance'), homework: user.role === 'student' ? db.homework.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)) : db.homework.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)), tests: user.role === 'student' ? db.tests.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)) : db.tests.filter(x => ownCourseIds.includes((courses.find(c => c.title === x.courseName) || {}).id)), news: db.news, notifications: db.notifications, payments: user.role === 'student' ? db.payments.filter(x => x.studentName === user.name) : [] });
+  const scoped = (key) => (db[key] || []).filter(r => ownCourseIds.includes(r.courseId) || ownCourseIds.includes((courses.find(c => c.title === r.courseName) || {}).id));
+  return Object.assign({}, db, {
+    users, courses, enrollments,
+    groups: user.role === 'teacher' ? scoped('groups').filter(g => g.teacherName === user.name || !g.teacherName) : scoped('groups'),
+    schedule: scoped('schedule'),
+    grades: filterRows('grades'), attendance: filterRows('attendance'),
+    homework: scoped('homework'), tests: scoped('tests'), news: db.news, notifications: db.notifications,
+    payments: user.role === 'parent' ? filterRows('payments') : user.role === 'student' ? filterRows('payments') : []
+  });
+}
+
+
+function visibleRows(db, user, collection) {
+  const rows = db[collection] || [];
+  if (user.role === 'admin') return rows;
+  const ownCourseIds = user.role === 'teacher' ? db.courses.filter(c => c.teacherId === user.id).map(c => c.id) : (user.courseIds || []);
+  const childIds = user.role === 'parent' ? db.parentChildren.filter(x => x.parentId === user.id).map(x => x.studentId) : [];
+  if (collection === 'parentChildren') return rows.filter(x => x.parentId === user.id);
+  if (collection === 'users') return user.role === 'teacher' ? db.users.filter(x => x.id === user.id || (x.role === 'student' && (x.courseIds || []).some(id => ownCourseIds.includes(id)))) : db.users.filter(x => x.id === user.id || childIds.includes(x.id));
+  if (collection === 'enrollments') return user.role === 'teacher' ? rows.filter(x => ownCourseIds.includes(x.courseId)) : user.role === 'parent' ? rows.filter(x => childIds.includes(x.userId)) : rows.filter(x => x.userId === user.id);
+  if (['grades','attendance'].includes(collection)) return user.role === 'teacher' ? rows.filter(r => ownCourseIds.includes(r.courseId) || ownCourseIds.includes((db.courses.find(c => c.title === r.courseName) || {}).id)) : user.role === 'parent' ? rows.filter(r => childIds.includes(r.userId) || childIds.includes(r.studentId) || childIds.includes(db.users.find(u=>u.name===r.studentName)?.id)) : rows.filter(r => r.userId === user.id || r.studentId === user.id || r.studentName === user.name);
+  if (['homework','tests','schedule','groups'].includes(collection)) return user.role === 'teacher' ? rows.filter(r => ownCourseIds.includes(r.courseId) || ownCourseIds.includes((db.courses.find(c => c.title === r.courseName) || {}).id) || r.teacherId === user.id || r.teacherName === user.name) : user.role === 'parent' ? rows.filter(r => ownCourseIds.includes(r.courseId) || childIds.some(id => (db.users.find(u=>u.id===id)?.courseIds || []).includes(r.courseId)) || childIds.some(id => (db.users.find(u=>u.id===id)?.courseIds || []).includes((db.courses.find(c=>c.title===r.courseName)||{}).id))) : rows.filter(r => ownCourseIds.includes(r.courseId) || ownCourseIds.includes((db.courses.find(c => c.title === r.courseName) || {}).id));
+  if (collection === 'payments') return user.role === 'parent' ? rows.filter(r => childIds.includes(r.userId) || childIds.includes(r.studentId) || childIds.includes(db.users.find(u=>u.name===r.studentName)?.id)) : user.role === 'student' ? rows.filter(r => r.userId === user.id || r.studentId === user.id || r.studentName === user.name) : rows;
+  if (collection === 'notifications') return rows.filter(r => !r.userId || r.userId === user.id);
+  return rows;
 }
 
 
@@ -173,7 +213,7 @@ async function handle(req, res) {
 
   if (p === '/api/bootstrap' && req.method === 'GET') {
     const u = requireAuth(req, res); if (!u) return; const db = await readDB(); const view = collectionForUser(db, u);
-    return json(res, 200, { user: safeUser(db.users.find(x => x.id === u.id)), stats: { users: db.users.length, students: db.users.filter(x => x.role === 'student').length, teachers: db.users.filter(x => x.role === 'teacher').length, courses: db.courses.length, groups: db.groups.length }, courses: view.courses, users: view.users.map(safeUser), enrollments: view.enrollments, groups: view.groups || [], schedule: view.schedule || [], grades: view.grades || [], attendance: view.attendance || [], homework: view.homework || [], tests: view.tests || [], news: view.news || [], notifications: view.notifications || [], payments: view.payments || [], auditLogs: u.role === 'admin' ? (db.auditLogs || []).slice(-100).reverse() : [] });
+    return json(res, 200, { user: safeUser(db.users.find(x => x.id === u.id)), stats: { users: db.users.length, students: db.users.filter(x => x.role === 'student').length, teachers: db.users.filter(x => x.role === 'teacher').length, courses: db.courses.length, groups: db.groups.length }, courses: view.courses, users: view.users.map(safeUser), enrollments: view.enrollments, groups: view.groups || [], schedule: view.schedule || [], grades: view.grades || [], attendance: view.attendance || [], homework: view.homework || [], tests: view.tests || [], news: view.news || [], notifications: view.notifications || [], payments: view.payments || [], auditLogs: u.role === 'admin' ? (db.auditLogs || []).slice(-100).reverse() : [], children: (db.parentChildren || []).filter(x => x.parentId === u.id).map(x => db.users.find(s => s.id === x.studentId)).filter(Boolean).map(safeUser), permissions: ROLE_PERMISSIONS[u.role] || [] });
   }
 
   if (p === '/api/profile' && req.method === 'PATCH') {
@@ -184,6 +224,28 @@ async function handle(req, res) {
     if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); meUser.salt = hp.salt; meUser.hash = hp.hash; }
     audit(db, meUser, 'profile_update', 'user', meUser.id, 'Обновлён профиль'); await writeDB(db); const fresh = safeUser(meUser); for (const [k,v] of sessions) if (v.id === meUser.id) sessions.set(k, fresh); return json(res, 200, { user: fresh });
   }
+
+
+  if (p === '/api/children' && req.method === 'GET') {
+    const u = requireAuth(req, res); if (!u) return;
+    const db = await readDB();
+    if (u.role !== 'parent' && u.role !== 'admin') return json(res, 403, { error: 'Недостаточно прав' });
+    const links = db.parentChildren.filter(x => u.role === 'admin' || x.parentId === u.id);
+    const children = links.map(x => db.users.find(s => s.id === x.studentId)).filter(Boolean).map(safeUser);
+    return json(res, 200, { children });
+  }
+  if (p === '/api/parent-children' && req.method === 'POST') {
+    const admin = requireAdmin(req, res); if (!admin) return;
+    const b = await readBody(req); const db = await readDB();
+    const parent = db.users.find(x => x.id === b.parentId && x.role === 'parent');
+    const student = db.users.find(x => x.id === b.studentId && x.role === 'student');
+    if (!parent || !student) return json(res, 400, { error: 'Выберите родителя и ученика' });
+    if (db.parentChildren.some(x => x.parentId === parent.id && x.studentId === student.id)) return json(res, 409, { error: 'Связь уже существует' });
+    const link = { id: uuid(), parentId: parent.id, studentId: student.id, createdAt: now() }; db.parentChildren.push(link);
+    audit(db, admin, 'link', 'parent-child', link.id, `${parent.name} → ${student.name}`); await writeDB(db); return json(res, 201, { link });
+  }
+  const pcl = p.match(/^\/api\/parent-children\/([^/]+)$/);
+  if (pcl && req.method === 'DELETE') { const admin = requireAdmin(req, res); if (!admin) return; const db=await readDB(); const id=decodeURIComponent(pcl[1]); const link=db.parentChildren.find(x=>x.id===id); if(!link)return json(res,404,{error:'Связь не найдена'}); db.parentChildren=db.parentChildren.filter(x=>x.id!==id); audit(db,admin,'unlink','parent-child',id,'Удалена связь родитель → ученик'); await writeDB(db); return json(res,200,{ok:true}); }
 
   // Users
   if (p === '/api/users' && req.method === 'GET') {
@@ -201,8 +263,8 @@ async function handle(req, res) {
   if (userMatch) {
     const id = decodeURIComponent(userMatch[1]); const admin = requireAdmin(req, res); if (!admin) return; const db = await readDB(); const u = db.users.find(x => x.id === id); if (!u) return json(res, 404, { error: 'Пользователь не найден' });
     if (req.method === 'GET') return json(res, 200, { user: safeUser(u), enrollments: db.enrollments.filter(e => e.userId === id) });
-    if (req.method === 'PATCH') { const b = await readBody(req); Object.assign(u, pick(b, ['name','bio','avatar','status'])); if (b.username !== undefined) { const username = normalizeUsername(b.username); if (!validUsername(username)) return json(res, 400, { error: 'Некорректный username' }); if (db.users.some(x => x.id !== id && x.username === username)) return json(res, 409, { error: 'Username уже используется' }); u.username = username; } if (b.phone !== undefined) { const phone = normalizePhone(b.phone); if (!validPhone(phone)) return json(res, 400, { error: 'Некорректный телефон' }); if (db.users.some(x => x.id !== id && normalizePhone(x.phone) === phone)) return json(res, 409, { error: 'Телефон уже используется' }); u.phone = phone; } if (b.role && ROLES.includes(b.role)) u.role = b.role; if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); u.salt = hp.salt; u.hash = hp.hash; } audit(db, admin, 'update', 'user', u.id, `Изменён пользователь ${u.username}`); await writeDB(db); return json(res, 200, { user: safeUser(u) }); }
-    if (req.method === 'DELETE') { if (id === admin.id) return json(res, 400, { error: 'Нельзя удалить текущего администратора' }); db.users = db.users.filter(x => x.id !== id); db.enrollments = db.enrollments.filter(e => e.userId !== id); db.grades = db.grades.filter(e => e.userId !== id); db.attendance = db.attendance.filter(e => e.userId !== id); audit(db, admin, 'delete', 'user', id, 'Удалён пользователь'); await writeDB(db); return json(res, 200, { ok: true }); }
+    if (req.method === 'PATCH') { const b = await readBody(req); Object.assign(u, pick(b, ['name','bio','avatar','status'])); if (b.username !== undefined) { const username = normalizeUsername(b.username); if (!validUsername(username)) return json(res, 400, { error: 'Некорректный username' }); if (db.users.some(x => x.id !== id && x.username === username)) return json(res, 409, { error: 'Username уже используется' }); u.username = username; } if (b.phone !== undefined) { const phone = normalizePhone(b.phone); if (!validPhone(phone)) return json(res, 400, { error: 'Некорректный телефон' }); if (db.users.some(x => x.id !== id && normalizePhone(x.phone) === phone)) return json(res, 409, { error: 'Телефон уже используется' }); u.phone = phone; } if (b.role && ROLES.includes(b.role)) { if (u.role === 'admin' && b.role !== 'admin' && db.users.filter(x => x.role === 'admin' && x.status !== 'blocked').length <= 1) return json(res, 400, { error: 'Нельзя убрать роль последнего активного администратора' }); u.role = b.role; } if (b.password) { if (!validPassword(b.password)) return json(res, 400, { error: 'Пароль минимум 8 символов' }); const hp = hashPassword(b.password); u.salt = hp.salt; u.hash = hp.hash; } audit(db, admin, 'update', 'user', u.id, `Изменён пользователь ${u.username}`); await writeDB(db); return json(res, 200, { user: safeUser(u) }); }
+    if (req.method === 'DELETE') { if (id === admin.id) return json(res, 400, { error: 'Нельзя удалить текущего администратора' }); db.users = db.users.filter(x => x.id !== id); db.enrollments = db.enrollments.filter(e => e.userId !== id); db.grades = db.grades.filter(e => e.userId !== id); db.attendance = db.attendance.filter(e => e.userId !== id); db.parentChildren = db.parentChildren.filter(x => x.parentId !== id && x.studentId !== id); audit(db, admin, 'delete', 'user', id, 'Удалён пользователь'); await writeDB(db); return json(res, 200, { ok: true }); }
   }
 
   // Courses
@@ -220,7 +282,7 @@ async function handle(req, res) {
 
   // Generic CRUD collections
   const cm=p.match(/^\/api\/(groups|schedule|grades|attendance|homework|tests|news|notifications|payments)(?:\/([^/]+))?$/);
-  if(cm){const collection=cm[1],id=cm[2]?decodeURIComponent(cm[2]):null;const u=requireAuth(req,res);if(!u)return;const db=await readDB();if(req.method==='GET'){let rows=db[collection]||[];if(collection==='news'||collection==='notifications') rows=rows.slice().sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));return json(res,200,{[collection]:rows});}if(u.role!=='admin'&&!(u.role==='teacher'&&['grades','attendance','homework','tests','groups','schedule'].includes(collection)))return json(res,403,{error:'Недостаточно прав'});if(req.method==='POST'){const b=await readBody(req);const row=Object.assign({id:uuid(),createdAt:now()},b);db[collection].push(row);audit(db,u,'create',collection,row.id,`Создана запись в ${collection}`);await writeDB(db);return json(res,201,{[collection.slice(0,-1)]:row});}if(req.method==='PATCH'&&id){const row=db[collection].find(x=>x.id===id);if(!row)return json(res,404,{error:'Запись не найдена'});Object.assign(row,await readBody(req));audit(db,u,'update',collection,id,`Изменена запись в ${collection}`);await writeDB(db);return json(res,200,{ok:true,row});}if(req.method==='DELETE'&&id){db[collection]=db[collection].filter(x=>x.id!==id);audit(db,u,'delete',collection,id,`Удалена запись из ${collection}`);await writeDB(db);return json(res,200,{ok:true});}}
+  if(cm){const collection=cm[1],id=cm[2]?decodeURIComponent(cm[2]):null;const u=requireAuth(req,res);if(!u)return;const db=await readDB();if(req.method==='GET'){let rows=visibleRows(db,u,collection);if(collection==='news'||collection==='notifications') rows=rows.slice().sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));return json(res,200,{[collection]:rows});}const teacherManaged=['grades','attendance','homework','tests','groups','schedule']; if(u.role!=='admin' && !(u.role==='teacher'&&teacherManaged.includes(collection))) return json(res,403,{error:'Недостаточно прав'});if(req.method==='POST'){const b=await readBody(req);const row=Object.assign({id:uuid(),createdAt:now()},b);db[collection].push(row);audit(db,u,'create',collection,row.id,`Создана запись в ${collection}`);await writeDB(db);return json(res,201,{[collection.slice(0,-1)]:row});}if(req.method==='PATCH'&&id){const row=db[collection].find(x=>x.id===id);if(!row)return json(res,404,{error:'Запись не найдена'});Object.assign(row,await readBody(req));audit(db,u,'update',collection,id,`Изменена запись в ${collection}`);await writeDB(db);return json(res,200,{ok:true,row});}if(req.method==='DELETE'&&id){db[collection]=db[collection].filter(x=>x.id!==id);audit(db,u,'delete',collection,id,`Удалена запись из ${collection}`);await writeDB(db);return json(res,200,{ok:true});}}
 
   if (p === '/api/audit-logs' && req.method === 'GET') {
     const admin = requireAdmin(req, res); if (!admin) return;
