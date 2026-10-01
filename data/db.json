@@ -24,7 +24,8 @@
       "status": "active",
       "phone": "+992900000002",
       "bio": "",
-      "username": "teacher"
+      "username": "teacher",
+      "lastLoginAt": "2026-10-01T20:28:36.917Z"
     },
     {
       "id": "parent-1",
@@ -37,7 +38,8 @@
       "status": "active",
       "phone": "+992900000003",
       "bio": "",
-      "username": "parent"
+      "username": "parent",
+      "lastLoginAt": "2026-10-01T20:28:56.133Z"
     },
     {
       "id": "student-1",
@@ -53,7 +55,8 @@
       "status": "active",
       "phone": "+992900000004",
       "bio": "",
-      "username": "student"
+      "username": "student",
+      "lastLoginAt": "2026-10-01T20:28:38.590Z"
     }
   ],
   "courses": [
@@ -227,5 +230,64 @@
       "createdAt": "2026-10-01T18:39:23.239Z"
     }
   ],
-  "auditLogs": []
+  "auditLogs": [
+    {
+      "id": "f3a039de-5278-4e8d-bb54-ecb671adc512",
+      "actorId": "parent-1",
+      "actorName": "Saida Parent",
+      "action": "login",
+      "entity": "user",
+      "entityId": "parent-1",
+      "details": "Успешный вход",
+      "createdAt": "2026-10-01T20:28:29.185Z"
+    },
+    {
+      "id": "a74e5366-5e65-4a43-8126-78ae6841981b",
+      "actorId": "parent-1",
+      "actorName": "Saida Parent",
+      "action": "login",
+      "entity": "user",
+      "entityId": "parent-1",
+      "details": "Успешный вход",
+      "createdAt": "2026-10-01T20:28:35.233Z"
+    },
+    {
+      "id": "0751eb1c-84b0-48f5-8566-b5e5be58225d",
+      "actorId": "teacher-1",
+      "actorName": "Anna Teacher",
+      "action": "login",
+      "entity": "user",
+      "entityId": "teacher-1",
+      "details": "Успешный вход",
+      "createdAt": "2026-10-01T20:28:36.917Z"
+    },
+    {
+      "id": "810096f1-fbf1-4ee5-9d74-d111914dc1b3",
+      "actorId": "student-1",
+      "actorName": "Ahmad Student",
+      "action": "login",
+      "entity": "user",
+      "entityId": "student-1",
+      "details": "Успешный вход",
+      "createdAt": "2026-10-01T20:28:38.590Z"
+    },
+    {
+      "id": "379cc137-28f9-4a5d-be58-fb6a73a5a273",
+      "actorId": "parent-1",
+      "actorName": "Saida Parent",
+      "action": "login",
+      "entity": "user",
+      "entityId": "parent-1",
+      "details": "Успешный вход",
+      "createdAt": "2026-10-01T20:28:56.133Z"
+    }
+  ],
+  "parentChildren": [
+    {
+      "id": "e992410d-59c2-4bce-a3ac-b8e2c02d16eb",
+      "parentId": "parent-1",
+      "studentId": "student-1",
+      "createdAt": "2026-10-01T20:26:52.207Z"
+    }
+  ]
 }
