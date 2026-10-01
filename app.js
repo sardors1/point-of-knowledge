@@ -1,6 +1,7 @@
 
 const APP = document.getElementById("app");
 const $ = (s)=>document.querySelector(s);
+const $$ = (s)=>Array.from(document.querySelectorAll(s));
 const store = {
   get(k,d=null){try{return JSON.parse(localStorage.getItem(k)) ?? d}catch{return d}},
   set(k,v){localStorage.setItem(k,JSON.stringify(v))}
