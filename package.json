@@ -1,1 +1,7 @@
-{"name":"point-of-knowledge","version":"2.0.0","private":true,"scripts":{"start":"node server.js"},"engines":{"node":"22.x"}}
+{
+  "name": "point-of-knowledge",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": "22.x" }
+}

@@ -1,76 +1,37 @@
-# Point of Knowledge / Нуқтаи Дониш — Complete Frontend Prototype
+# Point of Knowledge — Нуқтаи Дониш
 
-Это расширенный frontend-прототип образовательной платформы.
+Functional educational platform prototype for students, teachers, parents and administrators.
 
-## Уже реализовано
-
-- Официальный логотип Point of Knowledge
-- Login
-- Регистрация с выбором роли:
-  - Ученик
-  - Родитель
-  - Преподаватель
-  - Администратор
-- Demo authentication через localStorage
+## Included
 - RU / TJ / UZ / EN
-- Светлая/тёмная тема
-- Автоматическое определение темы устройства при первом запуске
-- Responsive: ПК / планшет / смартфон
-- PWA manifest
-- Sidebar + мобильная навигация
-- Student Dashboard
-- Teacher Dashboard
-- Parent Dashboard
-- Admin Dashboard
-- Курсы
-- Расписание
-- Оценки
-- Посещаемость
-- Домашние задания
-- Тесты
-- Достижения
-- Leaderboard
-- Новости
-- Уведомления
-- Пользователи / группы
-- Профиль / настройки
-- Демо-модальные формы
-- Сохранение языка, темы, роли и состояния входа
+- automatic light/dark theme + manual switch
+- login, registration, logout, password reset API
+- profiles and profile editing
+- admin user management: create/edit/block/delete
+- course management: create/edit/delete, assign teacher
+- student enrollment and move-to-course workflow
+- course student list and remove enrollment
+- CRUD pages for groups, schedule, grades, attendance, homework, tests, news, notifications and payments
+- responsive desktop/mobile navigation
+- Node.js 22 server and JSON data store
 
-## Запуск
-
-Самый простой вариант — открыть `index.html` в браузере.
-
-Для полноценного production-продукта следующим техническим этапом является backend:
-- PostgreSQL
-- серверная авторизация
-- безопасные сессии/JWT
-- реальные пользователи и роли
-- email/SMS подтверждение
-- хранение оценок, посещаемости, расписания и платежей
-- загрузка файлов
-- push/email уведомления
-- API для будущего Android/iOS приложения.
-
-Важно: текущая авторизация является только демонстрационной и не предназначена для реальных паролей/пользователей.
-
-## Локальный запуск полного прототипа
-
-Требуется Node.js 20+.
-
-```bash
-npm start
-```
-
-Откройте `http://localhost:3000`.
-
-### Demo accounts
-
-Все demo-пароли: `ChangeMe123!`
-
+## Demo accounts
+All demo accounts use `ChangeMe123!` unless you set role-specific environment passwords.
 - admin@pointofknowledge.tj
 - teacher@pointofknowledge.tj
 - parent@pointofknowledge.tj
 - student@pointofknowledge.tj
 
-Перед реальным запуском эти пароли обязательно заменить через переменные окружения `POK_ADMIN_PASSWORD`, `POK_TEACHER_PASSWORD`, `POK_PARENT_PASSWORD`, `POK_STUDENT_PASSWORD` и подключить настоящую БД.
+## Local
+```bash
+npm start
+```
+Open http://localhost:3000
+
+## Render
+Build command: `npm install`
+Start command: `npm start`
+Runtime: Node 22.x (from `.node-version` / `package.json`).
+
+### Production note
+The current JSON store is suitable for prototype/testing. Render Web Services use ephemeral local storage, so real production deployment should migrate the data layer to PostgreSQL before storing real student records, grades, payments or documents.
